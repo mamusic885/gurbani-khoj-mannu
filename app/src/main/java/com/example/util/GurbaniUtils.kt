@@ -68,7 +68,7 @@ object GurbaniUtils {
             fn.contains("tav_prasad") || fn.contains("savaiye") || bn.contains("ਸਵੱਯੇ") || bn.contains("tav prasad") -> "ਤ੍ਵ ਪ੍ਰਸਾਦਿ ਸਵੱਯੇ"
             fn.contains("chaupai") || bn.contains("chaupai") || bn.contains("ਚੌਪਈ") -> "ਚੌਪਈ ਸਾਹਿਬ"
             fn.contains("anand") || bn.contains("anand") || bn.contains("ਅਨੰਦ") -> "ਅਨੰਦ ਸਾਹਿਬ"
-            fn.contains("rehras") || bn.contains("rehras") || bn.contains("ਰਹਿਰਾਸ") -> "ਰਹਿਰਾਸ ਸਾਹਿਬ"
+            fn.contains("rehras") || fn.contains("rehraas") || bn.contains("rehras") || bn.contains("rehraas") || bn.contains("ਰਹਿਰਾਸ") || bn.contains("ਰਹਰਾਸ") -> "ਰਹਿਰਾਸ ਸਾਹਿਬ"
             fn.contains("ardas") || bn.contains("ardas") || bn.contains("ਅਰਦਾਸ") -> "ਅਰਦਾਸ"
             fn.contains("kirtan_sohila") || fn.contains("sohila") || bn.contains("sohila") || bn.contains("ਕੀਰਤਨ ਸੋਹਿਲਾ") || bn.contains("ਸੋਹਿਲਾ") -> "ਕੀਰਤਨ ਸੋਹਿਲਾ"
             fn.contains("aarti") || bn.contains("aarti") || bn.contains("ਆਰਤੀ") -> "ਆਰਤੀ"

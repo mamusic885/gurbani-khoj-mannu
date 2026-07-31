@@ -1,4 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@drawable/ic_launcher_background_img" />
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:angle="135"
+                android:endColor="#100A02"
+                android:centerColor="#261A08"
+                android:startColor="#4A3410"
+                android:type="linear" />
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M54,18 A36,36 0 1,1 53.99,18 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:gradientRadius="36"
+                android:centerX="54"
+                android:centerY="54"
+                android:startColor="#60D4AF37"
+                android:endColor="#00100A02"
+                android:type="radial" />
+        </aapt:attr>
+    </path>
+</vector>

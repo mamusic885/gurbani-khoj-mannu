@@ -108,13 +108,35 @@ class MainActivity : ComponentActivity() {
     val viewModel = androidx.lifecycle.ViewModelProvider(this, viewModelFactory)[BookmarksViewModel::class.java]
     val settingsManager = SettingsManager(applicationContext)
 
-kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-    try {
-        SggsDatabase.getInstance(applicationContext).getReadableDb()
-    } catch (e: Exception) {
-        android.util.Log.e("MainActivity", "Error pre-opening database: ${e.message}")
+    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+      try {
+        val sggsDb = com.example.data.SggsDatabase.getInstance(applicationContext)
+        sggsDb.getReadableDb()
+
+        val nitnemFiles = listOf(
+          "japji_sahib.json",
+          "jaap_sahib.json",
+          "tav_prasad_savaiye.json",
+          "chaupai_sahib.json",
+          "anand_sahib.json",
+          "rehras_sahib.json",
+          "kirtan_sohila.json",
+          "ardas.json",
+          "aarti.json",
+          "asa_di_vaar.json",
+          "sri_sukhmani_sahib.json"
+        )
+        for (file in nitnemFiles) {
+          try {
+            if (sggsDb.getCachedNitnemBani(file) == null) {
+              loadBaniFromAsset(applicationContext, file)
+            }
+          } catch (_: Exception) {}
+        }
+      } catch (e: Exception) {
+        android.util.Log.e("MainActivity", "Error in background pre-warm: ${e.message}")
+      }
     }
-}
     setContent {
       val settingsState by settingsManager.settings.collectAsStateWithLifecycle()
       val isDark = when (settingsState.themeMode) {
@@ -170,41 +192,82 @@ data class SearchResult(
 )
 
 fun getBaniFileName(title: String): String {
-  return when (title) {
-    "ਜਪੁਜੀ ਸਾਹਿਬ" -> "japji_sahib.json"
-    "ਜਾਪੁ ਸਾਹਿਬ" -> "jaap_sahib.json"
-    "ਤ੍ਵ ਪ੍ਰਸਾਦਿ ਸਵੱਯੇ" -> "tav_prasad_savaiye.json"
-    "ਚੌਪਈ ਸਾਹਿਬ" -> "chaupai_sahib.json"
-    "ਅਨੰਦ ਸਾਹਿਬ" -> "anand_sahib.json"
-    "ਰਹਿਰਾਸ ਸਾਹਿਬ" -> "rehras_sahib.json"
-    "ਅਰਦਾਸ" -> "ardas.json"
-    "ਕੀਰਤਨ ਸੋਹਿਲਾ" -> "kirtan_sohila.json"
-    "ਆਰਤੀ" -> "aarti.json"
-    "ਆਸਾ ਦੀ ਵਾਰ" -> "asa_di_vaar.json"
-    "ਸ੍ਰੀ ਸੁਖਮਨੀ ਸਾਹਿਬ" -> "sri_sukhmani_sahib.json"
+  val t = title.trim()
+  if (t.endsWith(".json")) return t
+  val lower = t.lowercase()
+  return when {
+    t == "ਜਪੁਜੀ ਸਾਹਿਬ" || lower.contains("japji") || lower.contains("ਜਪੁਜੀ") -> "japji_sahib.json"
+    t == "ਜਾਪੁ ਸਾਹਿਬ" || lower.contains("jaap") || lower.contains("ਜਾਪੁ") -> "jaap_sahib.json"
+    t == "ਤ੍ਵ ਪ੍ਰਸਾਦਿ ਸਵੱਯੇ" || lower.contains("tav_prasad") || lower.contains("savaiye") || lower.contains("ਸਵੱਯੇ") -> "tav_prasad_savaiye.json"
+    t == "ਚੌਪਈ ਸਾਹਿਬ" || lower.contains("chaupai") || lower.contains("ਚੌਪਈ") -> "chaupai_sahib.json"
+    t == "ਅਨੰਦ ਸਾਹਿਬ" || lower.contains("anand") || lower.contains("ਅਨੰਦ") -> "anand_sahib.json"
+    t == "ਰਹਿਰਾਸ ਸਾਹਿਬ" || lower.contains("rehras") || lower.contains("rehraas") || lower.contains("ਰਹਿਰਾਸ") || lower.contains("ਰਹਰਾਸ") -> "rehras_sahib.json"
+    t == "ਅਰਦਾਸ" || lower.contains("ardas") || lower.contains("ਅਰਦਾਸ") -> "ardas.json"
+    t == "ਕੀਰਤਨ ਸੋਹਿਲਾ" || lower.contains("sohila") || lower.contains("ਸੋਹਿਲਾ") -> "kirtan_sohila.json"
+    t == "ਆਰਤੀ" || lower.contains("aarti") || lower.contains("ਆਰਤੀ") -> "aarti.json"
+    t == "ਆਸਾ ਦੀ ਵਾਰ" || lower.contains("asa_di_vaar") || lower.contains("asa di vaar") || lower.contains("ਆਸਾ ਦੀ ਵਾਰ") -> "asa_di_vaar.json"
+    t == "ਸ੍ਰੀ ਸੁਖਮਨੀ ਸਾਹਿਬ" || lower.contains("sukhmani") || lower.contains("ਸੁਖਮਨੀ") -> "sri_sukhmani_sahib.json"
     else -> ""
   }
 }
 
 fun loadBaniFromAsset(context: android.content.Context, fileName: String): Bani {
   val sggsDb = com.example.data.SggsDatabase.getInstance(context)
-  sggsDb.getCachedNitnemBani(fileName)?.let { return it }
+  val stdTitleForFile = com.example.util.GurbaniUtils.getNitnemBaniTitle(fileName, "")
+
+  sggsDb.getCachedNitnemBani(fileName)?.let { cached ->
+    val correctTitle = stdTitleForFile ?: com.example.util.GurbaniUtils.getNitnemBaniTitle(fileName, cached.title) ?: cached.title
+    if (cached.title != correctTitle) {
+      val updated = cached.copy(title = correctTitle)
+      sggsDb.putCachedNitnemBani(fileName, updated)
+      return updated
+    }
+    return cached
+  }
 
   return try {
     val jsonString = context.assets.open("bani/$fileName").bufferedReader().use { it.readText() }
     val jsonObject = org.json.JSONObject(jsonString)
-    val rawTitle = jsonObject.getString("title")
-    val title = convertGurbaniAkharToUnicode(rawTitle)
+    val rawTitle = jsonObject.optString("title", "")
+    val stdTitle = stdTitleForFile ?: com.example.util.GurbaniUtils.getNitnemBaniTitle(fileName, rawTitle)
+    val title = stdTitle ?: if (rawTitle.isNotEmpty() && !rawTitle.contains("Sahib") && !rawTitle.contains("Chaupai") && !rawTitle.contains("Rehraas")) convertGurbaniAkharToUnicode(rawTitle) else fileName
     val versesArray = jsonObject.getJSONArray("verses")
-    val verses = mutableListOf<Verse>()
-val punjabiMap = cachedPunjabiTranslationMap ?: try {
-    val map = sggsDb.getPunjabiTranslationMap()
-    cachedPunjabiTranslationMap = map
-    map
-} catch (e: Exception) {
-    emptyMap()
-}
-    for (i in 0 until versesArray.length()) {
+    val count = versesArray.length()
+    val verses = ArrayList<Verse>(count)
+    val lineIds = ArrayList<Int>(count)
+    val rawLinesList = ArrayList<String>(count)
+
+    for (i in 0 until count) {
+      val verseObj = versesArray.getJSONObject(i)
+      val id = verseObj.optInt("id", -1)
+      if (id > 0) {
+        lineIds.add(id)
+      }
+      val rawLine = verseObj.optString("line", "")
+      if (rawLine.isNotEmpty()) {
+        rawLinesList.add(rawLine)
+      }
+    }
+
+    val punjabiMap = if (sggsDb.hasPunjabiMap()) sggsDb.getPunjabiTranslationMap() else emptyMap()
+
+    val punjabiIdMap = if (lineIds.isNotEmpty()) {
+      try {
+        sggsDb.getPunjabiTranslationsForLineIds(lineIds)
+      } catch (e: Exception) {
+        emptyMap()
+      }
+    } else emptyMap()
+
+    val punjabiLineMap = if (punjabiMap.isEmpty() && rawLinesList.isNotEmpty()) {
+      try {
+        sggsDb.getPunjabiTranslationsForLines(rawLinesList)
+      } catch (e: Exception) {
+        emptyMap()
+      }
+    } else emptyMap()
+
+    for (i in 0 until count) {
       val verseObj = versesArray.getJSONObject(i)
       val id = verseObj.optInt("id", i)
       val rawLine = verseObj.getString("line")
@@ -213,15 +276,22 @@ val punjabiMap = cachedPunjabiTranslationMap ?: try {
       val bookmarked = verseObj.optBoolean("bookmarked", false)
       val translation = verseObj.optString("translation", "")
       var punjabiTranslation = verseObj.optString("punjabiTranslation", verseObj.optString("punjabi_translation", ""))
-if (punjabiTranslation.isEmpty() && punjabiMap.isNotEmpty()) {
-    val cleanLine = line.replace("॥", "").replace("।", "").replace("|", "").trim()
-    val cleanRawLine = rawLine.replace("॥", "").replace("।", "").replace("|", "").trim()
-    punjabiTranslation = punjabiMap[rawLine]
-        ?: punjabiMap[line]
-        ?: punjabiMap[cleanRawLine]
-        ?: punjabiMap[cleanLine]
-        ?: ""
-}
+
+      if (punjabiTranslation.isEmpty()) {
+        val cleanLine = line.replace("॥", "").replace("।", "").replace("|", "").trim()
+        val cleanRaw = rawLine.replace("॥", "").replace("।", "").replace("|", "").trim()
+
+        punjabiTranslation = punjabiMap[line]
+          ?: punjabiMap[cleanLine]
+          ?: punjabiMap[rawLine]
+          ?: punjabiMap[cleanRaw]
+          ?: (if (id > 0) punjabiIdMap[id] else null)
+          ?: punjabiLineMap[line]
+          ?: punjabiLineMap[cleanLine]
+          ?: punjabiLineMap[rawLine]
+          ?: punjabiLineMap[cleanRaw]
+          ?: ""
+      }
 
       verses.add(Verse(id = id, index = i, line = line, pauseType = pauseType, bookmarked = bookmarked, translation = translation, punjabiTranslation = punjabiTranslation))
     }
@@ -445,7 +515,7 @@ fun HomeScreen(
         // Upper section: Header, Title, and Accent Divider
         Column(
           horizontalAlignment = Alignment.CenterHorizontally,
-          modifier = Modifier.padding(top = 16.dp)
+          modifier = Modifier.padding(top = 8.dp)
         ) {
           // Animated Ik Onkar symbol
           AnimatedVisibility(
@@ -455,14 +525,15 @@ fun HomeScreen(
               animationSpec = spring()
             )
           ) {
-Image(
-    painter = painterResource(id = R.drawable.ek_onkar),
-    contentDescription = "Ek Onkar",
-    modifier = Modifier
-        .size(68.dp)
-        .padding(bottom = 2.dp)
-        .testTag("ek_onkar_logo")
-)            
+            Image(
+              painter = painterResource(id = R.drawable.ek_onkar),
+              contentDescription = "Ek Onkar",
+              contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+              modifier = Modifier
+                .size(120.dp)
+                .padding(bottom = 4.dp)
+                .testTag("ek_onkar_logo")
+            )
           }
 
           // Animated App Title & Subtitle
@@ -1352,6 +1423,14 @@ fun BaniDetailScreen(
   var activeAngNum by remember(baniName) { mutableStateOf(initialAngNum) }
 
   val sggsDb = remember { SggsDatabase.getInstance(context) }
+  val stdNitnemTitle = remember(baniName, activeAngNum) {
+    if (activeAngNum != null || baniName.startsWith("sggs_shabad_")) null
+    else {
+      val fn = getBaniFileName(baniName)
+      com.example.util.GurbaniUtils.getNitnemBaniTitle(fn, baniName)
+    }
+  }
+
   val initialCachedData = remember(baniName, activeAngNum) {
     if (activeAngNum != null) {
       val cachedVerses = sggsDb.getCachedAngVerses(activeAngNum!!)
@@ -1371,14 +1450,17 @@ fun BaniDetailScreen(
       if (fileName.isNotEmpty()) {
         val cachedNitnem = sggsDb.getCachedNitnemBani(fileName)
         if (cachedNitnem != null && cachedNitnem.verses.isNotEmpty()) {
-          Pair(cachedNitnem.verses, cachedNitnem.title)
+          val title = stdNitnemTitle ?: cachedNitnem.title
+          Pair(cachedNitnem.verses, title)
         } else null
       } else null
     }
   }
 
   var sggsVerses by remember(baniName, activeAngNum) { mutableStateOf(initialCachedData?.first ?: emptyList()) }
-  var dynamicBaniTitle by remember(baniName, activeAngNum) { mutableStateOf(initialCachedData?.second ?: baniName) }
+  var dynamicBaniTitle by remember(baniName, activeAngNum) {
+    mutableStateOf(stdNitnemTitle ?: initialCachedData?.second ?: baniName)
+  }
   var isSggsLoading by remember(baniName, activeAngNum) {
     mutableStateOf(initialCachedData == null)
   }
@@ -1501,7 +1583,7 @@ fun BaniDetailScreen(
           if (fileName.isNotEmpty()) {
             val nitnemBani = loadBaniFromAsset(context, fileName)
             withContext(Dispatchers.Main) {
-              dynamicBaniTitle = nitnemBani.title
+              dynamicBaniTitle = stdNitnemTitle ?: nitnemBani.title
               sggsVerses = nitnemBani.verses
               isSggsLoading = false
               showLoadingUI = false
@@ -1584,7 +1666,7 @@ fun BaniDetailScreen(
         .padding(horizontal = 20.dp)
     ) {
       TopAppBar(
-        title = if (dynamicBaniTitle.isNotEmpty()) dynamicBaniTitle else (com.example.util.GurbaniUtils.cleanUserFriendlyTitle(baniName).ifEmpty { "ਸ੍ਰੀ ਗੁਰੂ ਗ੍ਰੰਥ ਸਾਹਿਬ ਜੀ" }),
+        title = stdNitnemTitle ?: if (dynamicBaniTitle.isNotEmpty()) dynamicBaniTitle else (com.example.util.GurbaniUtils.cleanUserFriendlyTitle(baniName).ifEmpty { "ਸ੍ਰੀ ਗੁਰੂ ਗ੍ਰੰਥ ਸਾਹਿਬ ਜੀ" }),
         onBack = onBack,
         actions = {
           if (isSukhmaniSahib) {
@@ -2594,22 +2676,15 @@ fun SearchScreen(
     )
   }
 
-  LaunchedEffect(Unit) {
-    allSggsBanis = sggsBaniFiles.map { fileName ->
-      loadBaniFromAsset(context, fileName)
-    }
-  }
-
-  // Active dataset depending strictly on source tab
-  val activeBanis = if (activeSourceTab == SearchSourceTab.SGGS) allSggsBanis else allNitnemBanis
-
-  // Instant real-time offline search (1430 Angs Sri Guru Granth Sahib Ji)
-  LaunchedEffect(searchQuery, activeFilterTab) {
+  // Instant real-time offline search (1430 Angs Sri Guru Granth Sahib Ji & Nitnem Banis)
+  LaunchedEffect(searchQuery, activeFilterTab, activeSourceTab) {
     val q = searchQuery.trim()
     if (q.isBlank()) {
       searchResults = emptyList()
       return@LaunchedEffect
     }
+
+    kotlinx.coroutines.delay(200)
 
     withContext(Dispatchers.IO) {
       val results = mutableListOf<SearchResult>()
@@ -2621,70 +2696,102 @@ fun SearchScreen(
 
       try {
         val sggsDb = SggsDatabase.getInstance(context)
-        val rawItems = mutableListOf<com.example.data.LineWithTranslation>()
 
-        if (parsedAng != null && (activeFilterTab == SearchFilterType.ALL || activeFilterTab == SearchFilterType.ANG)) {
-          rawItems.addAll(sggsDb.searchByAng(parsedAng))
-        }
+        if (activeSourceTab == SearchSourceTab.NITNEM) {
+          val nitnemResults = mutableListOf<SearchResult>()
+          nitnemBaniFiles.forEach { fn ->
+            val bani = loadBaniFromAsset(context, fn)
+            bani.verses.forEach { verse ->
+              val lineText = verse.line
+              val cleanLine = lineText.replace("॥", "").replace("।", "").replace("|", "").trim()
+              val firstLetters = cleanLine.split("\\s+".toRegex()).mapNotNull { word ->
+                word.firstOrNull { char -> char.isLetter() || char in '\u0A00'..'\u0A7F' }
+              }.joinToString("")
 
-        if (cleanQ.isNotEmpty()) {
+              val matches = when (activeFilterTab) {
+                SearchFilterType.FIRST_LETTER -> firstLetters.startsWith(cleanQ, ignoreCase = true) || firstLetters.startsWith(cleanNormQ, ignoreCase = true)
+                SearchFilterType.FULL_TEXT -> lineText.contains(q, ignoreCase = true) || cleanLine.replace(" ", "").contains(cleanQ, ignoreCase = true)
+                SearchFilterType.ANG -> false
+                else -> firstLetters.startsWith(cleanQ, ignoreCase = true) || lineText.contains(q, ignoreCase = true) || cleanLine.replace(" ", "").contains(cleanQ, ignoreCase = true)
+              }
+
+              if (matches) {
+                nitnemResults.add(
+                  SearchResult(
+                    baniName = bani.title,
+                    fileName = fn,
+                    verse = verse,
+                    searchMethod = activeFilterTab,
+                    highlightRange = null,
+                    matchedQuery = q,
+                    ang = 0
+                  )
+                )
+              }
+            }
+          }
+          results.addAll(nitnemResults)
+        } else {
+          val rawItems = mutableListOf<com.example.data.LineWithTranslation>()
+
+          if (parsedAng != null && (activeFilterTab == SearchFilterType.ALL || activeFilterTab == SearchFilterType.ANG)) {
+            rawItems.addAll(sggsDb.searchByAng(parsedAng))
+          }
+
+          if (cleanQ.isNotEmpty()) {
+            val asciiQ = convertGurmukhiToGurbaniAkharAscii(cleanQ)
+            val fullTextAsciiQ = convertGurmukhiToGurbaniAkharAscii(q.trim())
+            if (activeFilterTab == SearchFilterType.ALL || activeFilterTab == SearchFilterType.FIRST_LETTER) {
+              rawItems.addAll(sggsDb.searchByFirstLetters(cleanQ, asciiQ))
+            }
+            if (activeFilterTab == SearchFilterType.ALL || activeFilterTab == SearchFilterType.FULL_TEXT) {
+              rawItems.addAll(sggsDb.searchByFullText(q.trim(), fullTextAsciiQ))
+            }
+          }
+
+          val dbLines = rawItems.map { item ->
+            item.line.apply {
+              translation = item.translation ?: ""
+              punjabiTranslation = item.punjabiTranslation ?: ""
+            }
+          }
+
+          val uniqueLines = dbLines.distinctBy { it.id }
           val asciiQ = convertGurmukhiToGurbaniAkharAscii(cleanQ)
-          val fullTextAsciiQ = convertGurmukhiToGurbaniAkharAscii(q.trim())
-          android.util.Log.d("GurbaniSearch", "Executing search: raw='$cleanQ', ascii='$asciiQ' on table 'lines', column 'first_letters'")
-          if (activeFilterTab == SearchFilterType.ALL || activeFilterTab == SearchFilterType.FIRST_LETTER) {
-            rawItems.addAll(sggsDb.searchByFirstLetters(cleanQ, asciiQ))
-          }
-          if (activeFilterTab == SearchFilterType.ALL || activeFilterTab == SearchFilterType.FULL_TEXT) {
-            rawItems.addAll(sggsDb.searchByFullText(q.trim(), fullTextAsciiQ))
-          }
-        }
 
-        val dbLines = rawItems.map { item ->
-          item.line.apply {
-            translation = item.translation ?: ""
-            punjabiTranslation = item.punjabiTranslation ?: ""
-          }
-        }
+          uniqueLines.forEach { lineEntity ->
+            val idxOnAng = (lineEntity.source_line ?: 1) - 1
 
-        val uniqueLines = dbLines.distinctBy { it.id }
-        val asciiQ = convertGurmukhiToGurbaniAkharAscii(cleanQ)
-        // Cache page lines for accurate highlight index computation
-        val pageLinesCache = mutableMapOf<Int, List<com.example.data.LineWithTranslation>>()
-
-        uniqueLines.forEach { lineEntity ->
-          val angNum = lineEntity.source_page
-          val angLines = pageLinesCache.getOrPut(angNum) { sggsDb.searchByAng(angNum) }
-          val idxOnAng = angLines.indexOfFirst { it.line.id == lineEntity.id }.let { if (it >= 0) it else 0 }
-
-          val verse = Verse(
-            id = lineEntity.id.toIntOrNull() ?: lineEntity.id.hashCode(),
-            index = idxOnAng,
-            line = convertGurbaniAkharToUnicode(lineEntity.gurmukhi),
-            translation = lineEntity.translation,
-            punjabiTranslation = lineEntity.punjabiTranslation
-          )
-
-          val raagSuffix = if (lineEntity.raag.isNotEmpty()) " • ${lineEntity.raag}" else ""
-          val titleText = "ਸ੍ਰੀ ਗੁਰੂ ਗ੍ਰੰਥ ਸਾਹਿਬ ਜੀ (ਅੰਗ ${lineEntity.source_page})$raagSuffix"
-
-          val fl = lineEntity.first_letters ?: ""
-          val filterType = when {
-            parsedAng != null && lineEntity.source_page == parsedAng -> SearchFilterType.ANG
-            cleanQ.isNotEmpty() && (fl.startsWith(cleanQ, ignoreCase = true) || fl.startsWith(asciiQ, ignoreCase = true)) -> SearchFilterType.FIRST_LETTER
-            else -> SearchFilterType.FULL_TEXT
-          }
-
-          results.add(
-            SearchResult(
-              baniName = titleText,
-              fileName = "sggs_shabad_${lineEntity.shabad_id}",
-              verse = verse,
-              searchMethod = filterType,
-              highlightRange = null,
-              matchedQuery = q,
-              ang = lineEntity.source_page
+            val verse = Verse(
+              id = lineEntity.id.toIntOrNull() ?: lineEntity.id.hashCode(),
+              index = if (idxOnAng >= 0) idxOnAng else 0,
+              line = convertGurbaniAkharToUnicode(lineEntity.gurmukhi),
+              translation = lineEntity.translation,
+              punjabiTranslation = lineEntity.punjabiTranslation
             )
-          )
+
+            val raagSuffix = if (lineEntity.raag.isNotEmpty()) " • ${lineEntity.raag}" else ""
+            val titleText = "ਸ੍ਰੀ ਗੁਰੂ ਗ੍ਰੰਥ ਸਾਹਿਬ ਜੀ (ਅੰਗ ${lineEntity.source_page})$raagSuffix"
+
+            val fl = lineEntity.first_letters ?: ""
+            val filterType = when {
+              parsedAng != null && lineEntity.source_page == parsedAng -> SearchFilterType.ANG
+              cleanQ.isNotEmpty() && (fl.startsWith(cleanQ, ignoreCase = true) || fl.startsWith(asciiQ, ignoreCase = true)) -> SearchFilterType.FIRST_LETTER
+              else -> SearchFilterType.FULL_TEXT
+            }
+
+            results.add(
+              SearchResult(
+                baniName = titleText,
+                fileName = "sggs_shabad_${lineEntity.shabad_id}",
+                verse = verse,
+                searchMethod = filterType,
+                highlightRange = null,
+                matchedQuery = q,
+                ang = lineEntity.source_page
+              )
+            )
+          }
         }
       } catch (e: Exception) {
         e.printStackTrace()
@@ -2999,7 +3106,10 @@ fun SearchScreen(
               verticalArrangement = Arrangement.spacedBy(8.dp),
               contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp)
             ) {
-              itemsIndexed(searchResults) { index, result ->
+              itemsIndexed(
+                items = searchResults,
+                key = { index, result -> "${result.fileName}_${result.verse.id}_${result.verse.index}_$index" }
+              ) { index, result ->
                 Card(
                   onClick = {
                     val navTarget = if (result.fileName.isNotBlank()) result.fileName else result.baniName
@@ -3947,6 +4057,33 @@ text = "ਵਾਹਿਗੁਰੂ",
                   )
                 }
               }
+            }
+          }
+        }
+
+        // Informational Note Card
+        item {
+          Card(
+            colors = CardDefaults.cardColors(containerColor = Slate50),
+            border = BorderStroke(1.dp, Slate200),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("about_note_card")
+          ) {
+            Column(
+              modifier = Modifier.padding(16.dp)
+            ) {
+              Text(
+                text = "ਨੋਟ: ਜਪੁਜੀ ਸਾਹਿਬ, ਅਨੰਦ ਸਾਹਿਬ, ਸੁਖਮਨੀ ਸਾਹਿਬ ਅਤੇ ਹੋਰ ਗੁਰਬਾਣੀ ਦੀ ਵਿਆਖਿਆ \"ਸ਼੍ਰੀ ਗੁਰੂ ਗ੍ਰੰਥ ਸਾਹਿਬ ਜੀ\" ਭਾਗ ਵਿੱਚ ਪੜ੍ਹੀ ਜਾ ਸਕਦੀ ਹੈ।",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                  color = TextMedium,
+                  fontSize = 14.sp,
+                  lineHeight = 21.sp,
+                  fontWeight = FontWeight.Medium
+                ),
+                modifier = Modifier.testTag("about_note_text")
+              )
             }
           }
         }

@@ -46,40 +46,51 @@ class SggsDatabase private constructor(private val context: Context) : SQLiteOpe
         // Pre-packaged database. No migration script needed.
     }
 
-    @Synchronized
+    @Volatile
+    private var indexesCreated = false
+
     fun getReadableDb(): SQLiteDatabase {
-        openDb?.let { if (it.isOpen) return it }
+        val current = openDb
+        if (current != null && current.isOpen) return current
 
-        val dbFile = context.getDatabasePath(DB_NAME)
-        copyDatabaseIfNeeded(context, dbFile)
+        return synchronized(this) {
+            openDb?.let { if (it.isOpen) return@synchronized it }
 
-        Log.d(TAG, "database path: ${dbFile.absolutePath}")
-        Log.d(TAG, "exists = ${dbFile.exists()}")
-        Log.d(TAG, "file size = ${dbFile.length()}")
+            val dbFile = context.getDatabasePath(DB_NAME)
+            copyDatabaseIfNeeded(context, dbFile)
 
-        val db = SQLiteDatabase.openDatabase(
-            dbFile.absolutePath,
-            null,
-            SQLiteDatabase.OPEN_READWRITE
-        )
-        openDb = db
-        Log.d(TAG, "SQLite Database opened successfully")
-// ensureIndexesAndPragmas(db)
-        return db
+            Log.d(TAG, "database path: ${dbFile.absolutePath}")
+            Log.d(TAG, "exists = ${dbFile.exists()}")
+            Log.d(TAG, "file size = ${dbFile.length()}")
+
+            val db = SQLiteDatabase.openDatabase(
+                dbFile.absolutePath,
+                null,
+                SQLiteDatabase.OPEN_READWRITE
+            )
+            openDb = db
+            Log.d(TAG, "SQLite Database opened successfully")
+            ensureIndexesAndPragmas(db)
+            db
+        }
     }
 
     private fun ensureIndexesAndPragmas(db: SQLiteDatabase) {
         try {
             db.execSQL("PRAGMA journal_mode = WAL;")
             db.execSQL("PRAGMA synchronous = NORMAL;")
-            db.execSQL("PRAGMA cache_size = -8000;")
+            db.execSQL("PRAGMA cache_size = -16000;")
+            db.execSQL("PRAGMA temp_store = MEMORY;")
 
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_lines_shabad_id ON lines(shabad_id);")
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_lines_source_page ON lines(source_page);")
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_lines_order_id ON lines(order_id);")
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_lines_first_letters ON lines(first_letters);")
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_shabads_source_id ON shabads(source_id);")
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_line_source ON translations(line_id, translation_source_id);")
+            if (!indexesCreated) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_lines_shabad_id ON lines(shabad_id);")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_lines_source_page ON lines(source_page);")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_lines_order_id ON lines(order_id);")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_lines_first_letters ON lines(first_letters);")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_shabads_source_id ON shabads(source_id);")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_line_source ON translations(line_id, translation_source_id);")
+                indexesCreated = true
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error configuring pragmas or indexes: ${e.message}")
         }
@@ -345,6 +356,90 @@ class SggsDatabase private constructor(private val context: Context) : SQLiteOpe
     private var cachedPunjabiMap: Map<String, String>? = null
 
     fun hasPunjabiMap(): Boolean = cachedPunjabiMap != null
+
+    fun getPunjabiTranslationsForLineIds(lineIds: List<Int>): Map<Int, String> {
+        if (lineIds.isEmpty()) return emptyMap()
+        val validIds = lineIds.filter { it > 0 }.distinct()
+        if (validIds.isEmpty()) return emptyMap()
+
+        val map = HashMap<Int, String>(validIds.size)
+        try {
+            val db = getReadableDb()
+            validIds.chunked(500).forEach { chunk ->
+                val placeholders = chunk.joinToString(",") { "?" }
+                val sql = """
+                    SELECT line_id, translation_source_id, translation
+                    FROM translations
+                    WHERE line_id IN ($placeholders) AND translation_source_id IN (3, 6)
+                    ORDER BY translation_source_id ASC
+                """.trimIndent()
+                val args = chunk.map { it.toString() }.toTypedArray()
+                db.rawQuery(sql, args).use { cursor ->
+                    val lineIdIdx = cursor.getColumnIndex("line_id")
+                    val transIdx = cursor.getColumnIndex("translation")
+                    while (cursor.moveToNext()) {
+                        if (lineIdIdx >= 0 && transIdx >= 0 && !cursor.isNull(lineIdIdx) && !cursor.isNull(transIdx)) {
+                            val lineId = cursor.getInt(lineIdIdx)
+                            val translation = cursor.getString(transIdx)
+                            if (translation.isNotEmpty()) {
+                                map.putIfAbsent(lineId, translation)
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching Punjabi translations by line ID: ${e.message}", e)
+        }
+        return map
+    }
+
+    fun getPunjabiTranslationsForLines(rawLines: List<String>): Map<String, String> {
+        if (rawLines.isEmpty()) return emptyMap()
+        cachedPunjabiMap?.let { return it }
+
+        val map = HashMap<String, String>()
+        try {
+            val db = getReadableDb()
+            val cleanLinesList = rawLines.distinct().filter { it.isNotBlank() }
+            if (cleanLinesList.isEmpty()) return emptyMap()
+
+            cleanLinesList.chunked(500).forEach { chunk ->
+                val placeholders = chunk.joinToString(",") { "?" }
+                val sql = """
+                    SELECT l.gurmukhi, COALESCE(tp3.translation, tp6.translation) AS punjabi_translation
+                    FROM lines l
+                    LEFT JOIN translations tp3 ON l.id = tp3.line_id AND tp3.translation_source_id = 3
+                    LEFT JOIN translations tp6 ON l.id = tp6.line_id AND tp6.translation_source_id = 6
+                    WHERE l.gurmukhi IN ($placeholders) AND (tp3.translation IS NOT NULL OR tp6.translation IS NOT NULL)
+                """.trimIndent()
+                db.rawQuery(sql, chunk.toTypedArray()).use { cursor ->
+                    val gurmukhiIdx = cursor.getColumnIndex("gurmukhi")
+                    val punjabiIdx = cursor.getColumnIndex("punjabi_translation")
+                    while (cursor.moveToNext()) {
+                        val rawGurmukhi = if (gurmukhiIdx >= 0 && !cursor.isNull(gurmukhiIdx)) cursor.getString(gurmukhiIdx) else ""
+                        val punjabi = if (punjabiIdx >= 0 && !cursor.isNull(punjabiIdx)) cursor.getString(punjabiIdx) else ""
+                        if (rawGurmukhi.isNotEmpty() && punjabi.isNotEmpty()) {
+                            val unicodeLine = convertGurbaniAkharToUnicode(rawGurmukhi)
+                            map[rawGurmukhi] = punjabi
+                            map[unicodeLine] = punjabi
+                            val cleanLine = unicodeLine.replace("॥", "").replace("।", "").replace("|", "").trim()
+                            if (cleanLine.isNotEmpty()) {
+                                map[cleanLine] = punjabi
+                            }
+                            val cleanRaw = rawGurmukhi.replace("॥", "").replace("।", "").replace("|", "").trim()
+                            if (cleanRaw.isNotEmpty()) {
+                                map[cleanRaw] = punjabi
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching Punjabi translations for lines: ${e.message}", e)
+        }
+        return map
+    }
 
     fun getPunjabiTranslationMap(): Map<String, String> {
         cachedPunjabiMap?.let { return it }
