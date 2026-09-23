@@ -685,7 +685,7 @@ fun HomeScreen(
         ) {
 
           Text(
-            text = "Made by Manjot Singh M.Aa*",
+            text = "Made by MR.Manjot Singh M.A*",
             style = MaterialTheme.typography.bodySmall.copy(
               color = TextGray,
               fontWeight = FontWeight.Medium,
@@ -3987,7 +3987,7 @@ text = "ਵਾਹਿਗੁਰੂ",
               )
               Spacer(modifier = Modifier.height(2.dp))
               Text(
-                text = "Manjot Singh M.Aa✶",
+                text = "MR.Manjot Singh M.A✶",
                 style = MaterialTheme.typography.titleMedium.copy(
                   color = TextMedium,
                   fontWeight = FontWeight.Bold,
