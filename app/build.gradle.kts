@@ -26,37 +26,61 @@ android {
     val geminiApiKey = run {
       val envVal = System.getenv("GEMINI_API_KEY")
       if (envVal != null && envVal.isNotEmpty()) return@run envVal
+
       val propVal = project.findProperty("GEMINI_API_KEY")?.toString()
       if (propVal != null && propVal.isNotEmpty()) return@run propVal
+
       val envFile = file(".env")
       if (envFile.exists()) {
         val props = Properties()
         envFile.inputStream().use { stream -> props.load(stream) }
+
         val fileVal = props.getProperty("GEMINI_API_KEY")
         if (fileVal != null && fileVal.isNotEmpty()) return@run fileVal
       }
+
       ""
     }
-    buildConfigField("String", "GEMINI_API_KEY", "\"${geminiApiKey}\"")
+
+    buildConfigField(
+      "String",
+      "GEMINI_API_KEY",
+      "\"${geminiApiKey}\""
+    )
   }
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+      val keystorePath = System.getenv("KEYSTORE_PATH")
+        ?: "${rootDir}/my-upload-key.jks"
+
       val keystoreFile = file(keystorePath)
       val storePass = System.getenv("STORE_PASSWORD")
-      if (keystoreFile.exists() && !storePass.isNullOrEmpty()) {
-        storeFile = keystoreFile
-        storePassword = storePass
-        keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
-        keyPassword = System.getenv("KEY_PASSWORD")
-      } else {
-        val debugConfig = getByName("debug")
-        storeFile = debugConfig.storeFile
-        storePassword = debugConfig.storePassword
-        keyAlias = debugConfig.keyAlias
-        keyPassword = debugConfig.keyPassword
+      val keyAliasValue = System.getenv("KEY_ALIAS") ?: "upload"
+      val keyPass = System.getenv("KEY_PASSWORD")
+
+      if (!keystoreFile.exists()) {
+        throw GradleException(
+          "Release keystore not found. Configure KEYSTORE_PATH and GitHub Secrets."
+        )
       }
+
+      if (storePass.isNullOrEmpty()) {
+        throw GradleException(
+          "STORE_PASSWORD is not configured."
+        )
+      }
+
+      if (keyPass.isNullOrEmpty()) {
+        throw GradleException(
+          "KEY_PASSWORD is not configured."
+        )
+      }
+
+      storeFile = keystoreFile
+      storePassword = storePass
+      keyAlias = keyAliasValue
+      keyPassword = keyPass
     }
   }
 
@@ -64,45 +88,52 @@ android {
     release {
       isCrunchPngs = false
       isMinifyEnabled = false
-      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+
+      proguardFiles(
+        getDefaultProguardFile("proguard-android-optimize.txt"),
+        "proguard-rules.pro"
+      )
+
       signingConfig = signingConfigs.getByName("release")
     }
+
     debug {
       signingConfig = signingConfigs.getByName("debug")
     }
   }
+
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
   }
+
   buildFeatures {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+    }
+  }
 }
 
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
-// to match the convention used in Web projects.
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
   ignoreList.add("GEMINI_API_KEY")
 }
 
-googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
+googleServices {
+  missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN
+}
 
-// Some unused dependencies are commented out below instead of being removed.
-// This makes it easy to add them back in the future if needed.
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))
-  // implementation(libs.accompanist.permissions)
+
   implementation(libs.androidx.activity.compose)
-  // implementation(libs.androidx.camera.camera2)
-  // implementation(libs.androidx.camera.core)
-  // implementation(libs.androidx.camera.lifecycle)
-  // implementation(libs.androidx.camera.view)
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)
   implementation(libs.androidx.compose.material3)
@@ -114,30 +145,18 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
-  // implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
-  // implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
-  // Uncomment to use Firestore:
-  // implementation(libs.firebase.firestore)
-
-  // Firebase Auth with Google Sign-In requires all of the following to be uncommented together.
-  // If you are using Firebase Auth with other providers (e.g. Email/Password), you may only need
-  // firebase-auth.
-  // implementation(libs.firebase.auth)
-  // implementation(libs.androidx.credentials)
-  // implementation(libs.androidx.credentials.play.services)
-  // implementation(libs.googleid)
   implementation(libs.firebase.appcheck.recaptcha)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
-  // implementation(libs.play.services.location)
   implementation(libs.retrofit)
+
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
@@ -147,13 +166,16 @@ dependencies {
   testImplementation(libs.roborazzi)
   testImplementation(libs.roborazzi.compose)
   testImplementation(libs.roborazzi.junit.rule)
+
   androidTestImplementation(platform(libs.androidx.compose.bom))
   androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   androidTestImplementation(libs.androidx.espresso.core)
   androidTestImplementation(libs.androidx.junit)
   androidTestImplementation(libs.androidx.runner)
+
   debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
+
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
